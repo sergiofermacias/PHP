@@ -1,76 +1,60 @@
 <?php
-
-/**
- * Funcion para iniciar la sesión y manejar el login de usuarios.
- */
 session_start();
-/**
- * Establece la conexión con la base de datos MySQL.
- * @return conn Objeto de conexión a la base de datos.
- */
-function conectarBD() {
-    $host = "localhost";
-    $dbuser = "root";
-    $dbpass = "";
-    $dbname = "usuario_php";
-    $conn = new mysqli($host, $dbuser, $dbpass, $dbname);
 
-    if ($conn->connect_error) {
-        die("Conexión fallida: " . $conn->connect_error);
-    }
-    return $conn;
+// Regenerar siempre un nuevo session_id para evitar duplicados
+session_regenerate_id(true);
+
+// Conexión a la BD
+$host = "localhost";
+$dbuser = "root";
+$dbpass = "";
+$dbname = "tienda_producto";
+$conn = new mysqli($host, $dbuser, $dbpass, $dbname);
+
+if ($conn->connect_error) {
+    die("Conexión fallida: " . $conn->connect_error);
 }
 
-// Procesar el formulario de login
+// Verificar si se envió el formulario
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    $username = $_POST['username'];
+    $password = $_POST['password'];
 
-/**
- * Verifica las credenciales de inicio de sesión de un usuario.
- */
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
-    $username = trim($_POST['username']);
-    $password = trim($_POST['password']);
-    
-    if (empty($username) || empty($password)) {
-        $error = "Por favor ingrese usuario y contraseña";
+    // Consulta para validar usuario
+    $sql = "SELECT * FROM login_user WHERE username=? AND password=?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ss", $username, $password);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows === 1) {
+        // Usuario válido → iniciar sesión
+        $_SESSION['loggedin'] = true;
+        $_SESSION['username'] = $username;
+
+        // Obtener y guardar el session_id generado por PHP
+        $sesion_id = session_id();
+        $_SESSION['sesion_id'] = $sesion_id;
+
+        // Registrar en log_sistema
+        $sql_log = "INSERT INTO log_sistema (session_id, username, login_time) 
+                    VALUES (?, ?, NOW())";
+        $stmt_log = $conn->prepare($sql_log);
+        $stmt_log->bind_param("ss", $sesion_id, $username);
+        $stmt_log->execute();
+        $stmt_log->close();
+
+        // Redirigir al formulario de productos
+        header("Location: registro_producto.php");
+        exit;
     } else {
-        $conn = conectarBD();
-        $sql = "SELECT id, username, password FROM login_user WHERE username = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("s", $username);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows == 1) {
-            $user = $result->fetch_assoc();
-            
-            // Verificar contraseña (en tu caso parece que se almacena en texto plano)
-            // En un sistema real deberías usar password_verify() con contraseñas hasheadas
-            if ($password === $user['password']) {
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['loggedin'] = true;
-                
-                // Redirigir al panel de administración
-                header("Location: conexionBD_leer_registrar_eliminar_editar_css_sesion.php");
-                exit;
-            } else {
-                $error = "Contraseña incorrecta";
-            }
-        } else {
-            $error = "Usuario no encontrado";
-        }
-        $stmt->close();
-        $conn->close();
+        $error = "Usuario o contraseña incorrectos";
     }
+
+    $stmt->close();
 }
 
-// Cerrar sesión
-if (isset($_GET['logout'])) {
-    session_unset(); // elimina variables de sesión
-    session_destroy();   // destruye el fichero de sesión
-    header("Location: login.php");
-    exit();
-}
+$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -79,15 +63,15 @@ if (isset($_GET['logout'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inicio de Sesión</title>
-    <link rel="stylesheet" href="estilo_login.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <h2>Iniciar Sesión</h2>
-    
+
     <?php if (isset($error)): ?>
         <div style="color:red;"><?php echo $error; ?></div>
     <?php endif; ?>
-    
+
     <form action="login.php" method="post">
         <label for="username">Usuario:</label>
         <input type="text" id="username" name="username" required>
@@ -97,5 +81,7 @@ if (isset($_GET['logout'])) {
         
         <input type="submit" name="login" value="Iniciar Sesión">
     </form>
+
+    <p>¿No tienes cuenta? <a href="registro_usuario.php">Regístrate aquí</a></p>
 </body>
 </html>
